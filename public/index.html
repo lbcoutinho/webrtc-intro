@@ -7,23 +7,29 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>WebRTC Intro</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.1/socket.io.js"></script>
 </head>
 
 <body>
-  <div>
-    <div id="audioDevices">
-      <label for="audioSelector">Audio:</label>
-      <select id="audioSelector"></select>
-    </div>
-    <div id="videoDevices">
-      <label for="videoSelector">Video:</label>
-      <select id="videoSelector"></select>
-    </div>
+  <div class="container">
+    <video id="myVideo" autoplay></video>
+    <video id="peerVideo" autoplay></video>
   </div>
 
-  <div>
-    <video id="videoTag" autoplay></video>
+  <div class="container">
+    <div class="field-group">
+      <label for="name">Name: </label><input type="text" name="name" id="name" />
+    </div>
+    <div class="field-group">
+      <label for="message">Message: </label><input type="text" name="message" id="message" />
+    </div>
+    <div class="field-group">
+      <input type="submit" id="send" />
+    </div>
+    <h3>Chat</h3>
+    <div id="chat"></div>
   </div>
+
   <script src="index.js"></script>
 </body>
 
