@@ -1,3 +1,6 @@
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
 video {
   border: 1px solid #aaa;
   margin-right: 2em;
@@ -11,14 +14,18 @@ video {
   margin-bottom: 0.5em;
 }
 
-.field-group label{
+.field-group label {
   font-weight: bold;
   width: 100px;
 }
 
-#chat {
+.box {
   border: 1px solid #aaa;
-  width: 400px; 
-  min-height: 200px;
+  width: 400px;
+  height: 200px;
+  overflow-y: scroll;
 }
 
+h3 {
+  margin: 0.5em 0;
+}
