@@ -21,7 +21,7 @@ video {
 
 .box {
   border: 1px solid #aaa;
-  width: 400px;
+  width: 650px;
   height: 200px;
   overflow-y: scroll;
 }
