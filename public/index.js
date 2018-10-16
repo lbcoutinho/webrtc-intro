@@ -2,7 +2,8 @@
 const myVideo = document.querySelector('#myVideo');
 const peerVideo = document.querySelector('#peerVideo');
 const signalingLog = document.querySelector('#signalingLog');
-const sendSignal = document.querySelector('#sendSignal');
+const callBtn = document.querySelector('#callBtn');
+const hangupBtn = document.querySelector('#hangupBtn');
 
 // Chat HTML elements
 const username = document.querySelector('#username');
@@ -16,55 +17,24 @@ const SIGNAL_ROOM = 'signal_room';
 const socket = io('http://localhost:3000');
 
 // Signaling variables
+// Other constraints option: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+const constraints = {
+  audio: true,
+  video: { width: 240, height: 240 }
+};
+
 const configuration = {
-  iceServers: [{ url: 'stun:stun.l.google.com:19302' }]
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 };
 
 let rtcPeerConn;
 
-// Steam initialization
-function startStream() {
-  // Other constraints option: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
-  const constraints = {
-    audio: true,
-    video: { width: 240, height: 240 }
-  };
-
-  navigator.mediaDevices
-    .getUserMedia(constraints)
-    .then(stream => {
-      myVideo.src = window.URL.createObjectURL(stream);
-      myVideo.load();
-      myVideo.play();
-    })
-    .catch(err => {
-      console.log('Error on mediaDevices.getUserMedia: ', err);
-    });
-}
-
 function setupChat() {
-  sendBtn.addEventListener(
-    'click',
-    e => {
-      socket.emit('send', {
-        name: name.value,
-        message: message.value,
-        room: ROOM
-      });
-      e.preventDefault();
-    },
-    false
-  );
-}
-
-function setupSignaling() {
-  sendSignal.addEventListener('click', e => {
-    addSignalingLog('Sending signal: start-signaling');
-    socket.emit('start-signaling', {
-      type: 'start-signaling',
-      // type: 'start_signaling',
-      message: 'Are you ready for a call?',
-      room: SIGNAL_ROOM
+  sendBtn.addEventListener('click', e => {
+    socket.emit('send', {
+      name: name.value,
+      message: message.value,
+      room: ROOM
     });
     e.preventDefault();
   });
@@ -74,18 +44,133 @@ function addChatMessage(msg) {
   chat.innerHTML += msg + '<br>';
 }
 
-function addSignalingLog(msg) {
+async function initConnection() {
+  rtcPeerConn = new RTCPeerConnection(configuration);
+  // Sends ICE candidate if it exists
+  rtcPeerConn.onicecandidate = ({ candidate }) => {
+    if (candidate) {
+      addSignalingLog('Sending ICE candidate', candidate);
+
+      socket.emit('new-ice-candidate', {
+        type: 'ICE',
+        candidate: JSON.stringify(candidate),
+        room: SIGNAL_ROOM
+      });
+    }
+  };
+
+  // Sends answer when receives SDP offer
+  rtcPeerConn.onnegotiationneeded = async () => {
+    // There is a bug on Googel Chrome that calls onnegotiationneede twice, one for each track on the stream
+    // https://github.com/mdn/samples-server/issues/57
+    // The variable _negotiating was introduced to guarantee we don't have concurrent negotiations running
+    if (rtcPeerConn._negotiating) return;
+    rtcPeerConn._negotiating = true;
+
+    addSignalingLog('Starting onnegotiationneeded');
+    try {
+      addSignalingLog('Setting local description with offer');
+      const offer = await rtcPeerConn.createOffer();
+      await rtcPeerConn.setLocalDescription(offer);
+
+      addSignalingLog('Sending SDP offer', offer);
+      socket.emit(
+        'send-sdp',
+        {
+          type: 'SDP',
+          desc: JSON.stringify(rtcPeerConn.localDescription),
+          room: SIGNAL_ROOM
+        },
+        logError
+      );
+    } catch (err) {
+      logError(err);
+    } finally {
+      rtcPeerConn._negotiating = false;
+    }
+  };
+
+  // Show remote stream when it arrives
+  rtcPeerConn.ontrack = e => {
+    if (peerVideo.srcObject) return;
+    addSignalingLog('Remote track received', e);
+    peerVideo.srcObject = e.streams[0];
+  };
+
+  addSignalingLog('Starting local stream');
+  try {
+    // Show local stream
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    myVideo.srcObject = stream;
+    // Adding the stream tracks to the connection triggers the negotiation with the peer
+    stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
+  } catch (err) {
+    logError(err);
+  }
+}
+
+function endConnection() {
+  if (rtcPeerConn) {
+    rtcPeerConn.onnicecandidate = null;
+    rtcPeerConn.onnotificationneeded = null;
+    rtcPeerConn.ontrack = null;
+
+    if (peerVideo.srcObject) {
+      peerVideo.srcObject.getTracks().forEach(track => track.stop());
+      peerVideo.srcObject = null;
+    }
+
+    if (myVideo.srcObject) {
+      myVideo.srcObject.getTracks().forEach(track => track.stop());
+      myVideo.srcObject = null;
+    }
+
+    rtcPeerConn.close();
+    rtcPeerConn = null;
+  }
+}
+
+function setupSignaling() {
+  callBtn.addEventListener('click', e => {
+    initConnection();
+  });
+
+  hangupBtn.addEventListener('click', e => {
+    addSignalingLog('Closing connection');
+    endConnection();
+    socket.emit(
+      'end-call',
+      {
+        type: 'end-call',
+        room: SIGNAL_ROOM
+      },
+      logError
+    );
+  });
+}
+
+function addSignalingLog(msg, obj) {
   socket.emit('log', {
-    message: `${username.value}: ${msg}`,
+    message: `${new Date().toLocaleString('pt-BR')} - ${
+      username.value
+    }: ${msg}`,
     room: SIGNAL_ROOM
   });
+  if (obj) {
+    console.log(msg, obj);
+  }
+}
+
+function logError(err) {
+  const msg = `${err.name}: ${err.message}`;
+  addSignalingLog(msg);
+  console.error(msg);
 }
 
 // Invoke functions
 window.onload = function() {
   console.log('--- Start');
 
-  // startStream();
   setupChat();
   setupSignaling();
 
@@ -96,6 +181,7 @@ window.onload = function() {
   socket.on('new-client', msg => {
     addChatMessage(msg);
   });
+
   socket.on('message', data => {
     addChatMessage(`${data.name}: ${data.message}`);
   });
@@ -105,113 +191,51 @@ window.onload = function() {
     signalingLog.innerHTML += `${data.message}<br>`;
   });
 
-  socket.on('start-signaling-received', data => {
-    addSignalingLog(`Signal received: ${data.type}`);
-    console.log('Signal received: ', data);
+  socket.on('ice-candidate-received', async data => {
+    addSignalingLog('ICE candidate received', data);
 
-    if (!rtcPeerConn) {
-      initConnection();
-    }
+    const candidate = JSON.parse(data.candidate);
+    await rtcPeerConn.addIceCandidate(new RTCIceCandidate(candidate));
   });
 
-  socket.on('ice-candidate-received', data => {
-    addSignalingLog(`Signal received: ${data.type}`);
-    console.log('Signal received: ', data);
-
-    const message = JSON.parse(data.message);
-    rtcPeerConn.addIceCandidate(new RTCIceCandidate(message.candidate));
-  });
-
-  socket.on('sdp-offer-received', data => {
-    addSignalingLog(`Signal received: ${data.type}`);
-    console.log('Signal received: ', data);
+  socket.on('sdp-received', async data => {
+    addSignalingLog('SDP received', data);
 
     if (!rtcPeerConn) {
       initConnection();
     }
 
     // If SDP offer is received then return answer
-    const message = JSON.parse(data.message);
-    rtcPeerConn.setRemoteDescription(
-      new RTCSessionDescription(message.sdp),
-      () => {
-        addSignalingLog('setRemoteDescription callback');
-        console.log('setRemoteDescription callback');
-        console.log(rtcPeerConn.remoteDescription);
-        if (rtcPeerConn.remoteDescription.type == 'offer') {
-          rtcPeerConn.createAnswer(sendLocalDescription, logError);
-        }
-      },
-      logError
-    );
+    const desc = JSON.parse(data.desc);
+    if (desc.type == 'offer') {
+      addSignalingLog('Setting remote description with offer received');
+      await rtcPeerConn.setRemoteDescription(new RTCSessionDescription(desc));
+      try {
+        addSignalingLog('Setting local description with answer');
+        const answer = await rtcPeerConn.createAnswer();
+        await rtcPeerConn.setLocalDescription(answer);
+
+        addSignalingLog('Sending SDP answer', answer);
+        socket.emit(
+          'send-sdp',
+          {
+            type: 'SDP',
+            desc: JSON.stringify(rtcPeerConn.localDescription),
+            room: SIGNAL_ROOM
+          },
+          logError
+        );
+      } catch (err) {
+        logError(err);
+      }
+    } else if (desc.type == 'answer') {
+      addSignalingLog('Setting remote description with answer received');
+      await rtcPeerConn.setRemoteDescription(new RTCSessionDescription(desc));
+    }
+  });
+
+  socket.on('end-call-received', () => {
+    addSignalingLog('End call received');
+    endConnection();
   });
 };
-
-function initConnection() {
-  addSignalingLog('Init RTCPeerConnection');
-  rtcPeerConn = new RTCPeerConnection(configuration);
-
-  rtcPeerConn.onicecandidate = e => {
-    if (e.candidate) {
-      addSignalingLog('Sending ICE candidate');
-      console.log('Sending ICE candidate', e.candidate);
-
-      socket.emit('new-ice-candidate', {
-        type: 'ICE',
-        message: JSON.stringify({ candidate: e.candidate }),
-        room: SIGNAL_ROOM
-      });
-    }
-  };
-
-  // Trigger when receive SDP offer, then return own offer to peer
-  rtcPeerConn.onnegotiationneeded = () => {
-    addSignalingLog('Starting onnegotiationneeded');
-    rtcPeerConn.createOffer(sendLocalDescription, logError);
-  };
-
-  // Show peer stream when it arrives
-  rtcPeerConn.onaddstream = e => {
-    addSignalingLog('Starting onaddstream');
-    console.log('Starting onaddstream', e);
-    peerVideo.src = URL.createObjectURL(e.stream);
-  };
-
-  // Show local stream
-  navigator.mediaDevices
-    .getUserMedia({
-      audio: false,
-      video: { width: 240, height: 240 }
-    })
-    .then(stream => {
-      addSignalingLog('Adding local steam');
-      console.log('Adding local steam', stream);
-      myVideo.src = URL.createObjectURL(stream);
-      rtcPeerConn.addStream(stream);
-    })
-    .catch(logError);
-}
-
-// SDP = Session Description Protocol. Message contains info about browser codecs, resolution and etc.
-function sendLocalDescription(desc) {
-  rtcPeerConn.setLocalDescription(desc, () => {
-    addSignalingLog('Sending signal : SDP');
-    console.log('sendLocalDescription - desc: ', desc);
-    console.log('sendLocalDescription - localDescription: ');
-    console.log(rtcPeerConn.localDescription);
-
-    socket.emit(
-      'sdp-offer',
-      {
-        type: 'SDP',
-        message: JSON.stringify({ sdp: rtcPeerConn.localDescription }),
-        room: SIGNAL_ROOM
-      },
-      logError
-    );
-  });
-}
-
-function logError(err) {
-  addSignalingLog(`${err.name}: ${err.message}`);
-}

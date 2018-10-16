@@ -21,11 +21,17 @@ video {
 
 .box {
   border: 1px solid #aaa;
-  width: 400px;
+  width: 650px;
   height: 200px;
   overflow-y: scroll;
 }
 
 h3 {
   margin: 0.5em 0;
+}
+
+button {
+  margin-right: 1em;
+  padding: 0.5em 0;
+  min-width: 100px;
 }
