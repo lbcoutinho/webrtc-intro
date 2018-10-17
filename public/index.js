@@ -274,22 +274,30 @@ function setupButtons() {
   });
 
   shareScreenBtn.addEventListener('click', async e => {
-    const mozillaConstraints = {
+    const firefoxConstraints = {
       video: { mediaSource: 'screen', width: 340, height: 260 }
     };
 
-    // const chromeConstraints = {
-    //   video: {
-    //     chromeMediaSource: 'screen',
-    //     width: 340,
-    //     height: 260
-    //   }
-    // };
+    const chromeConstraints = {
+      video: {
+        mandatory: {
+          chromeMediaSource: 'screen',
+          maxWidth: 340,
+          maxHeight: 260
+        },
+        optional: []
+      }
+    };
+
+    const constraints =
+      navigator.userAgent.indexOf('Chrome') !== -1
+        ? chromeConstraints
+        : firefoxConstraints;
 
     try {
       addSignalingLog('Starting screen share');
-      // TODO On local environment works only on firefox
-      const stream = await navigator.mediaDevices.getUserMedia(mozillaConstraints);
+      // On local environment works only on Firefox
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
 
       createAndSendOffer();
