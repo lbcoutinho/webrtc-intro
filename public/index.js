@@ -21,6 +21,7 @@ const ROOM = '#1';
 const SIGNAL_ROOM = 'signal_room';
 const FILES_ROOM = 'files_room';
 
+const isFirefox = navigator.userAgent.indexOf('Firefox') !== -1;
 const host =
   window.location.hostname == 'localhost'
     ? 'http://localhost:3000'
@@ -274,30 +275,23 @@ function setupButtons() {
   });
 
   shareScreenBtn.addEventListener('click', async e => {
-    const firefoxConstraints = {
-      video: { mediaSource: 'screen', width: 340, height: 260 }
-    };
-
-    const chromeConstraints = {
-      video: {
-        mandatory: {
-          chromeMediaSource: 'screen',
-          maxWidth: 340,
-          maxHeight: 260
-        },
-        optional: []
-      }
-    };
-
-    const constraints =
-      navigator.userAgent.indexOf('Chrome') !== -1
-        ? chromeConstraints
-        : firefoxConstraints;
-
     try {
       addSignalingLog('Starting screen share');
       // On local environment works only on Firefox
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream;
+      if (isFirefox) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { mediaSource: 'screen', width: 340, height: 260 }
+        });
+      } else {
+        // navigator.getDisplayMedia API is available on Chrome v70+
+        // Chrome v70 does not support constraints on getDisplayMedia
+        // https://groups.google.com/forum/#!searchin/discuss-webrtc/getdisplaymedia|sort:date/discuss-webrtc/6ImvPjWQvbE/insmIVtHBgAJ
+        stream = await navigator.getDisplayMedia({
+          audio: false,
+          video: true
+        });
+      }
       stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
 
       createAndSendOffer();
