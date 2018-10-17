@@ -26,6 +26,10 @@ video {
   overflow-y: scroll;
 }
 
+.row {
+  margin: 1em 0;
+}
+
 h3 {
   margin: 0.5em 0;
 }

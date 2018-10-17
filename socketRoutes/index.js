@@ -18,8 +18,12 @@ module.exports = (io, socket) => {
     socket.to(data.room).emit('sdp-received', data);
   });
 
-  socket.on('end-call', data => {
-    socket.to(data.room).emit('end-call-received', data);
+  socket.on('close-connection', data => {
+    socket.to(data.room).emit('close-connection-received', data);
+  });
+
+  socket.on('send-file-metadata', data => {
+    socket.to(data.room).emit('file-metadata-received', data);
   });
 
   socket.on('log', data => {

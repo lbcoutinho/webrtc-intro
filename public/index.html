@@ -13,14 +13,23 @@
 <body>
   <h1>WebRTC Demo</h1>
   <div class="container">
-    <div class="field-group">
+    <div class="row field-group">
       <label for="username">User: </label><input type="text" id="username" />
     </div>
-    <video id="myVideo" autoplay></video>
-    <video id="peerVideo" autoplay></video>
-    <br>
-    <button id="callBtn">Call</button>
-    <button id="hangupBtn">Hangup</button>
+    <div class="row">
+      <video id="localVideo" autoplay></video>
+      <video id="remoteVideo" autoplay></video>
+    </div>
+    <div class="row">
+      <input type="file" id="fileInput">
+      <progress id="fileProgress" value="1" max="100"></progress>
+      <a id="receivedFileLink"></a>
+    </div>
+    <div class="row">
+      <button id="callBtn">Call</button>
+      <button id="hangupBtn" disabled>Hangup</button>
+      <button id="sendFileBtn" disabled>Send File</button>
+    </div>
   </div>
 
   <h3>Signaling Log</h3>
@@ -38,7 +47,7 @@
       <label for="message">Message: </label><input type="text" name="message" id="message" />
     </div>
     <div class="field-group">
-      <input type="submit" id="send" />
+      <button id="send">Send</button>
     </div>
     <div id="chat" class="box"></div>
   </div>
