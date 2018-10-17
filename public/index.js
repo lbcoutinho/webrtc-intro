@@ -4,6 +4,8 @@ const remoteVideo = document.querySelector('#remoteVideo');
 const signalingLog = document.querySelector('#signalingLog');
 const callBtn = document.querySelector('#callBtn');
 const hangupBtn = document.querySelector('#hangupBtn');
+const shareScreenBtn = document.querySelector('#shareScreenBtn');
+const stopSharingBtn = document.querySelector('#stopSharingBtn');
 const sendFileBtn = document.querySelector('#sendFileBtn');
 const fileInput = document.querySelector('#fileInput');
 const fileProgress = document.querySelector('#fileProgress');
@@ -19,15 +21,13 @@ const ROOM = '#1';
 const SIGNAL_ROOM = 'signal_room';
 const FILES_ROOM = 'files_room';
 
-const socket = io(window.location.hostname);
+const host =
+  window.location.hostname == 'localhost'
+    ? 'http://localhost:3000'
+    : window.location.hostname;
+const socket = io(host);
 
 // Signaling variables
-// Other constraints option: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
-const mediaConstraints = {
-  audio: true,
-  video: { width: 240, height: 240 }
-};
-
 const configuration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 };
@@ -86,20 +86,7 @@ async function initConnection() {
 
     addSignalingLog('Starting onnegotiationneeded');
     try {
-      addSignalingLog('Setting local description with offer');
-      const offer = await rtcPeerConn.createOffer();
-      await rtcPeerConn.setLocalDescription(offer);
-
-      addSignalingLog('Sending SDP offer', offer);
-      socket.emit(
-        'send-sdp',
-        {
-          type: 'SDP',
-          desc: JSON.stringify(rtcPeerConn.localDescription),
-          room: SIGNAL_ROOM
-        },
-        logError
-      );
+      createAndSendOffer();
     } catch (err) {
       logError(err);
     } finally {
@@ -109,10 +96,10 @@ async function initConnection() {
 
   // Show remote stream when it arrives
   rtcPeerConn.ontrack = e => {
-    if (remoteVideo.srcObject) return;
     addSignalingLog('Remote track received', e);
     remoteVideo.srcObject = e.streams[0];
     hangupBtn.disabled = false;
+    shareScreenBtn.disabled = false;
   };
 
   // Setup handler for new data channel
@@ -125,13 +112,34 @@ async function initConnection() {
   addSignalingLog('Starting local stream');
   try {
     // Show local stream
-    const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    // Other constraints option: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: { width: 240, height: 240 }
+    });
     localVideo.srcObject = stream;
     // Adding the stream tracks to the connection triggers the negotiation with the peer
     stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
   } catch (err) {
     logError(err);
   }
+}
+
+async function createAndSendOffer() {
+  addSignalingLog('Setting local description with offer');
+  const offer = await rtcPeerConn.createOffer();
+  await rtcPeerConn.setLocalDescription(offer);
+
+  addSignalingLog('Sending SDP offer', offer);
+  socket.emit(
+    'send-sdp',
+    {
+      type: 'SDP',
+      desc: JSON.stringify(rtcPeerConn.localDescription),
+      room: SIGNAL_ROOM
+    },
+    logError
+  );
 }
 
 function closeConnection() {
@@ -161,6 +169,7 @@ function closeConnection() {
     rtcPeerConn = null;
 
     hangupBtn.disabled = true;
+    shareScreenBtn.disabled = true;
   }
 }
 
@@ -264,6 +273,51 @@ function setupButtons() {
     );
   });
 
+  shareScreenBtn.addEventListener('click', async e => {
+    const mozillaConstraints = {
+      video: { mediaSource: 'screen', width: 340, height: 260 }
+    };
+
+    // const chromeConstraints = {
+    //   video: {
+    //     chromeMediaSource: 'screen',
+    //     width: 340,
+    //     height: 260
+    //   }
+    // };
+
+    try {
+      addSignalingLog('Starting screen share');
+      // TODO On local environment works only on firefox
+      const stream = await navigator.mediaDevices.getUserMedia(mozillaConstraints);
+      stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
+
+      createAndSendOffer();
+
+      shareScreenBtn.style = 'display: none';
+      stopSharingBtn.style = '';
+    } catch (err) {
+      logError(err);
+    }
+  });
+
+  stopSharingBtn.addEventListener('click', async e => {
+    try {
+      addSignalingLog('Stoping screen share');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 240, height: 240 }
+      });
+      stream.getTracks().forEach(track => rtcPeerConn.addTrack(track, stream));
+
+      createAndSendOffer();
+
+      stopSharingBtn.style = 'display: none';
+      shareScreenBtn.style = '';
+    } catch (err) {
+      logError(err);
+    }
+  });
+
   sendFileBtn.addEventListener('click', e => {
     addSignalingLog('Sending file');
     const file = fileInput.files[0];
@@ -329,6 +383,7 @@ window.onload = function() {
   // Signaling events
   socket.on('log', data => {
     signalingLog.innerHTML += `${data.message}<br>`;
+    signalingLog.scrollTop = signalingLog.scrollHeight;
   });
 
   socket.on('ice-candidate-received', async data => {
