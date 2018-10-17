@@ -19,7 +19,7 @@ const ROOM = '#1';
 const SIGNAL_ROOM = 'signal_room';
 const FILES_ROOM = 'files_room';
 
-const socket = io('http://localhost:3000');
+const socket = io(window.location.hostname);
 
 // Signaling variables
 // Other constraints option: https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
