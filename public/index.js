@@ -1,4 +1,7 @@
 // HTML elements
+const username = document.querySelector('#username');
+const connectBtn = document.querySelector('#connectBtn');
+const onlineUsers = document.querySelector('#onlineUsers');
 const localVideo = document.querySelector('#localVideo');
 const remoteVideo = document.querySelector('#remoteVideo');
 const signalingLog = document.querySelector('#signalingLog');
@@ -12,21 +15,18 @@ const fileProgress = document.querySelector('#fileProgress');
 const receivedFileLink = document.querySelector('#receivedFileLink');
 
 // Chat HTML elements
-const username = document.querySelector('#username');
 const name = document.querySelector('#name');
 const message = document.querySelector('#message');
 const sendBtn = document.querySelector('#send');
 const chat = document.querySelector('#chat');
-const ROOM = '#1';
-const SIGNAL_ROOM = 'signal_room';
-const FILES_ROOM = 'files_room';
+const ROOM = 'global-chat-room';
 
 const isFirefox = navigator.userAgent.indexOf('Firefox') !== -1;
 const host =
   window.location.hostname == 'localhost'
     ? 'http://localhost:3000'
     : window.location.hostname;
-const socket = io(host);
+let socket;
 
 // Signaling variables
 const configuration = {
@@ -34,6 +34,7 @@ const configuration = {
 };
 
 let rtcPeerConn;
+let signalRoom;
 
 // Data channel variables
 const dataChannelOptions = {
@@ -70,9 +71,8 @@ async function initConnection() {
       addSignalingLog('Sending ICE candidate', candidate);
 
       socket.emit('new-ice-candidate', {
-        type: 'ICE',
         candidate: JSON.stringify(candidate),
-        room: SIGNAL_ROOM
+        room: signalRoom
       });
     }
   };
@@ -99,6 +99,7 @@ async function initConnection() {
   rtcPeerConn.ontrack = e => {
     addSignalingLog('Remote track received', e);
     remoteVideo.srcObject = e.streams[0];
+    callBtn.disabled = true;
     hangupBtn.disabled = false;
     shareScreenBtn.disabled = false;
   };
@@ -135,9 +136,8 @@ async function createAndSendOffer() {
   socket.emit(
     'send-sdp',
     {
-      type: 'SDP',
       desc: JSON.stringify(rtcPeerConn.localDescription),
-      room: SIGNAL_ROOM
+      room: signalRoom
     },
     logError
   );
@@ -168,7 +168,9 @@ function closeConnection() {
 
     rtcPeerConn.close();
     rtcPeerConn = null;
+    signalRoom = null;
 
+    callBtn.disabled = false;
     hangupBtn.disabled = true;
     shareScreenBtn.disabled = true;
   }
@@ -251,27 +253,19 @@ function sliceAndSendFile(file) {
 
 function setupButtons() {
   callBtn.addEventListener('click', e => {
-    initConnection();
-    // Create data channel
-    addSignalingLog('Creating data channel');
-    dataChannel = rtcPeerConn.createDataChannel(
-      'data-channel',
-      dataChannelOptions
-    );
-    addDataChannelHandlers();
+    socket.emit('call-user', { id: onlineUsers.value });
   });
 
   hangupBtn.addEventListener('click', e => {
     addSignalingLog('Closing connection');
-    closeConnection();
     socket.emit(
       'close-connection',
       {
-        type: 'close-connection',
-        room: SIGNAL_ROOM
+        room: signalRoom
       },
       logError
-    );
+      );
+    closeConnection();
   });
 
   shareScreenBtn.addEventListener('click', async e => {
@@ -333,14 +327,18 @@ function setupButtons() {
       addSignalingLog(`File selected: ${file.name} (${file.size})`);
       addSignalingLog('Sending file metadata');
       socket.emit('send-file-metadata', {
-        type: 'file-metadata',
         metadata: { name: file.name, size: file.size },
-        room: FILES_ROOM
+        room: signalRoom
       });
       sendFileBtn.disabled = false;
     } else {
       sendFileBtn.disabled = true;
     }
+  });
+
+  onlineUsers.addEventListener('change', () => {
+    const hasValue = onlineUsers.value;
+    callBtn.disabled = !hasValue;
   });
 }
 
@@ -349,7 +347,7 @@ function addSignalingLog(msg, obj) {
     message: `${new Date().toLocaleString('pt-BR')} - ${
       username.value
     }: ${msg}`,
-    room: SIGNAL_ROOM
+    room: signalRoom
   });
   if (obj) {
     console.log(msg, obj);
@@ -362,16 +360,28 @@ function logError(err) {
   console.error(msg);
 }
 
-// Invoke functions
-window.onload = function() {
-  console.log('--- Start');
-
+function initSocket() {
+  console.log('Init Socket');
+  const namespace = 'mot';
+  socket = io(`${host}?username=${username.value}`);
   setupChat();
   setupButtons();
 
   socket.emit('join-room', ROOM);
-  socket.emit('join-room', SIGNAL_ROOM);
-  socket.emit('join-room', FILES_ROOM);
+
+  socket.on('users-list-update', data => {
+    // Remove all options
+    while (onlineUsers.options.length > 0) {
+      onlineUsers.remove(0);
+    }
+
+    // Recreate options with updated list
+    data.forEach(({ username, id }) => {
+      if (socket.id != id) {
+        onlineUsers.appendChild(new Option(username, id));
+      }
+    });
+  });
 
   // Chat events
   socket.on('new-client', msg => {
@@ -388,6 +398,19 @@ window.onload = function() {
     signalingLog.scrollTop = signalingLog.scrollHeight;
   });
 
+  socket.on('joined-signal-room', room => {
+    signalRoom = room;
+    addSignalingLog(`Joined signal room: ${room}`);
+    initConnection();
+    // Create data channel
+    addSignalingLog('Creating data channel');
+    dataChannel = rtcPeerConn.createDataChannel(
+      'data-channel',
+      dataChannelOptions
+    );
+    addDataChannelHandlers();
+  });
+
   socket.on('ice-candidate-received', async data => {
     addSignalingLog('ICE candidate received', data);
 
@@ -396,6 +419,9 @@ window.onload = function() {
   });
 
   socket.on('sdp-received', async data => {
+    if (!signalRoom) {
+      signalRoom = data.room;
+    }
     addSignalingLog('SDP received', data);
 
     if (!rtcPeerConn) {
@@ -416,9 +442,8 @@ window.onload = function() {
         socket.emit(
           'send-sdp',
           {
-            type: 'SDP',
             desc: JSON.stringify(rtcPeerConn.localDescription),
-            room: SIGNAL_ROOM
+            room: signalRoom
           },
           logError
         );
@@ -433,6 +458,7 @@ window.onload = function() {
 
   socket.on('close-connection-received', () => {
     addSignalingLog('Close connection received');
+    socket.emit('leave-room', signalRoom);
     closeConnection();
   });
 
@@ -445,5 +471,23 @@ window.onload = function() {
       name: data.metadata.name,
       size: data.metadata.size
     };
+  });
+}
+
+// Invoke functions
+window.onload = function() {
+  connectBtn.addEventListener('click', () => {
+    if (!socket && username.value) {
+      initSocket();
+      connectBtn.innerHTML = 'Disconnect';
+    } else if (socket) {
+      socket.disconnect();
+      // Remove all options
+      while (onlineUsers.options.length > 0) {
+        onlineUsers.remove(0);
+      }
+      connectBtn.innerHTML = 'Connect';
+      socket = null;
+    }
   });
 };

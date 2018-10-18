@@ -1,8 +1,26 @@
-module.exports = (io, socket) => {
+module.exports = (io, socket, allSockets) => {
+  socket.on('call-user', ({ id }) => {
+    const filterResult = allSockets.filter(s => s.id == id);
+
+    if (filterResult.length) {
+      const targetSocket = filterResult[0];
+      const signalRoom = socket.id + targetSocket.id;
+
+      socket.join(signalRoom);
+      targetSocket.join(signalRoom);
+
+      io.to(socket.id).emit('joined-signal-room', signalRoom);
+    }
+  });
+
   socket.on('join-room', room => {
     socket.join(room, () => {
       io.to(room).emit('new-client', `New client in the room ${room}.`);
     });
+  });
+
+  socket.on('leave-room', room => {
+    socket.leave(room);
   });
 
   socket.on('send', data => {
@@ -20,6 +38,7 @@ module.exports = (io, socket) => {
 
   socket.on('close-connection', data => {
     socket.to(data.room).emit('close-connection-received', data);
+    socket.leave(data.room);
   });
 
   socket.on('send-file-metadata', data => {

@@ -39,3 +39,12 @@ button {
   padding: 0.5em 0;
   min-width: 100px;
 }
+
+input {
+  padding: 0.5em 0;
+}
+
+select {
+  min-width: 300px;
+  min-height: 100px;
+}
